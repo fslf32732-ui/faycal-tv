@@ -5,7 +5,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# الذاكرة السحابية لاستقبال البيانات من حاسوبك
+# الذاكرة السحابية المؤقتة لحفظ بيانات البث القادمة من حاسوبك
 live_session = {
     "stream_url": "",
     "cookies_str": "",
@@ -17,9 +17,8 @@ live_session = {
 def index():
     global live_session
     stream_url = live_session["stream_url"] if live_session["is_ready"] else ""
-    cookies = live_session["cookies_str"]
-    referer = live_session["referer_url"]
     
+    # كود الواجهة والمشغل الذكي hls.js مدمج هنا بدقة
     return f"""
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
@@ -53,19 +52,14 @@ def index():
                 statusText.innerText = "● تم جلب الرابط الحي! جاري تشغيل البث الصاروخي... 🚀";
                 
                 if (Hls.isSupported()) {{
-                    var hls = new Hls({{
-                        // إجبار المشغل على تمرير الكوكيز والحماية لتخطي جدار الموقع الأصلي
-                        xhrSetup: function (xhr, url) {{
-                            xhr.withCredentials = false; 
-                        }}
-                    }});
+                    var hls = new Hls();
                     hls.loadSource(streamUrl);
                     hls.attachMedia(video);
                     hls.on(Hls.Events.MANIFEST_PARSED, function () {{
                         video.play();
                     }});
                 }} else if (video.canPlayType('application/vnd.apple.mpegurl')) {{
-                    // دعم هواتف الآيفون وسفاري تلقائياً
+                    // دعم هواتف الآيفون ومتصفح سفاري تلقائياً
                     video.src = streamUrl;
                     video.addEventListener('loadedmetadata', function() {{
                         video.play();
@@ -85,14 +79,15 @@ def update_stream():
     global live_session
     data = request.json
     if not data or 'stream_url' not in data:
-        return jsonify({{"status": "error"}}), 400
+        return jsonify({"status": "error"}), 400
     
+    # استقبال البيانات وتحديث الذاكرة بسلام بدون تداخل الأقواس المزدوجة
     live_session["stream_url"] = data['stream_url']
     live_session["cookies_str"] = data.get('cookies', '')
     live_session["referer_url"] = data.get('referer', '')
     live_session["is_ready"] = True
     print("[+] Cloud: Received stream URL successfully!")
-    return jsonify({{"status": "success"}})
+    return jsonify({"status": "success"})
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8000))
