@@ -32,7 +32,7 @@ def index():
     <body>
         <div class="header-bar">Faycal TV - <span>HLS Stream Player</span></div>
         <div class="main-container">
-            <video id="video" controls autoplay playsinline></video>
+            <video id="video" controls autoplay playsinline muted></video>
             <div class="status-log" id="status_message">جاري التحقق من اتصال البث...</div>
         </div>
 
@@ -46,16 +46,17 @@ def index():
                     hls.destroy();
                 }
 
-                // كسر الكاش بإضافة المعطيات الزمنية والعشوائية
-                var m3u8Url = "/stream/index.m3u8?t=" + new Date().getTime() + "&r=" + Math.random();
+                // كسر كاش البداية فقط
+                var m3u8Url = "/stream/index.m3u8?t=" + new Date().getTime();
 
                 if (Hls.isSupported()) {
                     hls = new Hls({
-                        maxLiveSyncPlaybackRate: 2.0,
-                        liveSyncDurationCount: 1,
+                        maxLiveSyncPlaybackRate: 1.5,
+                        liveSyncDurationCount: 2,      // موازنة لضمان سلاسة التدفق دون ريفراش
                         enableWorker: true,
-                        manifestLoadingTimeOut: 5000,
-                        manifestLoadingMaxRetry: 5
+                        lowLatencyMode: true,          // تفعيل زمن التأخير المنخفض للمباريات
+                        manifestLoadingTimeOut: 10000,
+                        manifestLoadingMaxRetry: 10
                     });
                     
                     hls.loadSource(m3u8Url);
@@ -63,14 +64,28 @@ def index():
                     
                     hls.on(Hls.Events.MANIFEST_PARSED, function () {
                         statusMessage.innerText = "● البث المباشر شغال الآن بنجاح.";
-                        video.play().catch(function(e){});
+                        video.play().catch(function(e){
+                            statusMessage.innerText = "⚠️ اضغط تشغيل يدويًا للسماح بالصوت.";
+                        });
                     });
 
                     hls.on(Hls.Events.ERROR, function (event, data) {
                         if (data.fatal) {
-                            statusMessage.innerText = "🔄 جاري إعادة مزامنة تدفق الفيديو المستمر...";
+                            switch (data.type) {
+                                case Hls.ErrorTypes.NETWORK_ERROR:
+                                    statusMessage.innerText = "🔄 خطأ شبكة، جاري إعادة المزامنة الحية...";
+                                    hls.startLoad();
+                                    break;
+                                case Hls.ErrorTypes.MEDIA_ERROR:
+                                    statusMessage.innerText = "🔄 جاري معالجة حزم الفيديو والصوت...";
+                                    hls.recoverMediaError();
+                                    break;
+                                default:
+                                    statusMessage.innerText = "🔄 جاري إعادة بناء الاتصال بالسيرفر المحلي...";
+                                    setTimeout(startStream, 2000);
+                                    break;
+                            }
                             statusMessage.style.color = "#ffcc00";
-                            setTimeout(startStream, 2000);
                         }
                     });
                 } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -80,13 +95,6 @@ def index():
             }
 
             startStream();
-
-            // إجبار المتصفح على تجديد جلب قائمة التشغيل كل 5 ثوانٍ
-            setInterval(function() {
-                if (hls) {
-                    hls.loadSource("/stream/index.m3u8?t=" + new Date().getTime());
-                }
-            }, 5000);
         </script>
     </body>
     </html>
