@@ -3,9 +3,9 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
+# تفعيل الـ CORS الكامل لمنع أي حظر من المتصفحات وهواتف أصدقائك
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# حفظ رابط الـ API المحلي الخاص بحاسوبك
 live_session = {
     "local_api_url": "",
     "is_ready": False
@@ -38,7 +38,7 @@ def index():
         <div class="app-bar">Faycal <span>TV Hybrid API</span></div>
         <div class="container">
             <video id="video" controls autoplay playsinline></video>
-            <div class="status" id="status_text">جاري الاتصال بالسحاب وفحص الـ API المحلي...</div>
+            <div class="status" id="status_text">جاري فحص الـ API المحلي...</div>
         </div>
 
         <script>
@@ -47,10 +47,16 @@ def index():
             var localApiUrl = "{local_api}";
 
             if (localApiUrl) {{
-                statusText.innerText = "🔄 جاري جلب الرابط الحي من الـ API الخاص بحاسوبك...";
+                statusText.innerText = "🔄 جاري اختراق حماية نغروك وجلب الرابط الحي...";
                 
-                // الاتصال بالـ API المحلي الخاص بحاسوبك لجلب رابط البث والكوكيز الحالية
-                fetch(localApiUrl)
+                // إضافة الهيدر السحري لتخطي صفحة تحذير Ngrok الزرقاء بلمح البصر
+                fetch(localApiUrl, {{
+                    method: 'GET',
+                    headers: {{
+                        'ngrok-skip-browser-warning': 'true',
+                        'User-Agent': 'Mozilla/5.0'
+                    }}
+                }})
                 .then(response => response.json())
                 .then(data => {{
                     if (data.stream_url) {{
@@ -70,12 +76,12 @@ def index():
                             }});
                         }}
                     }} else {{
-                        statusText.innerText = "❌ الـ API المحلي لم يقم باصطياد أي رابط بعد.";
+                        statusText.innerText = "❌ لم يتم العثور على رابط البث الحي داخل الملف المحلي.";
                         statusText.style.color = "#ff3b30";
                     }}
                 }})
                 .catch(err => {{
-                    statusText.innerText = "❌ تعذر الاتصال بحاسوبك الرئيسي. تأكد من تشغيل السكربت المحلي ومن فتح المنفذ (Ngrok).";
+                    statusText.innerText = "❌ تعذر الاتصال بالمنفذ الخارجي لحاسوبك. أعد تحديث الصفحة في الهاتف بعد لحظات.";
                     statusText.style.color = "#ff3b30";
                 }});
             }} else {{
@@ -94,7 +100,6 @@ def update_stream():
     if not data or 'local_api_url' not in data:
         return jsonify({"status": "error"}), 400
     
-    # استقبال رابط الـ API وحفظه
     live_session["local_api_url"] = data['local_api_url']
     live_session["is_ready"] = True
     print(f"[+] Received Local API URL: {data['local_api_url']}")
