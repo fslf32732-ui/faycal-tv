@@ -53,19 +53,19 @@ def index():
 
                 if (Hls.isSupported()) {
                     hls = new Hls({
-                        // ✅ إعدادات محسّنة لتوافق liveSyncDurationCount مع hls_list_size: 3
-                        liveSyncDurationCount: 3,
-                        liveMaxLatencyDurationCount: 6,
-                        maxLiveSyncPlaybackRate: 1.5,
+                        // ✅ زيادة طفيفة لتعويض تأخر الرفع السحابي ومنع تجميد الشاشة
+                        liveSyncDurationCount: 4,
+                        liveMaxLatencyDurationCount: 8,
+                        maxLiveSyncPlaybackRate: 1.3,
                         enableWorker: true,
-                        lowLatencyMode: true,
-                        manifestLoadingTimeOut: 10000,
-                        manifestLoadingMaxRetry: 15,
-                        levelLoadingTimeOut: 10000,
-                        fragLoadingTimeOut: 20000,
-                        // ✅ تقليل زمن buffer للبث المباشر
-                        maxBufferLength: 15,
-                        maxMaxBufferLength: 30,
+                        lowLatencyMode: false, // تعطيله لأن الرفع التقليدي لا يدعم LL-HLS الحقيقي
+                        manifestLoadingTimeOut: 15000,
+                        manifestLoadingMaxRetry: 20,
+                        levelLoadingTimeOut: 15000,
+                        fragLoadingTimeOut: 25000,
+                        // ✅ حجم بافر متزن ومستقر ومناسب لـ Render
+                        maxBufferLength: 20,
+                        maxMaxBufferLength: 40,
                     });
 
                     hls.loadSource(m3u8Url);
@@ -130,7 +130,6 @@ def index():
 @app.route('/upload/<filename>', methods=['PUT'])
 def upload_file(filename):
     """استقبال الملفات من local_streamer.py"""
-    # ✅ حماية من اسم ملف خبيث (path traversal)
     filename = os.path.basename(filename)
     file_path = os.path.join(STREAM_DIR, filename)
     with open(file_path, 'wb') as f:
@@ -140,19 +139,16 @@ def upload_file(filename):
 @app.route('/stream/<filename>')
 def serve_stream(filename):
     """تقديم ملفات البث مع headers صحيحة"""
-    # ✅ حماية من path traversal
     filename = os.path.basename(filename)
     response = make_response(send_from_directory(STREAM_DIR, filename))
 
     if filename.endswith('.m3u8'):
         response.headers['Content-Type'] = 'application/vnd.apple.mpegurl'
-        # ✅ منع أي كاش للمانيفست
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
     elif filename.endswith('.ts'):
         response.headers['Content-Type'] = 'video/mp2t'
-        # ✅ السماح بكاش قصير للمقاطع لتقليل الضغط على Render
         response.headers['Cache-Control'] = 'public, max-age=10'
 
     response.headers['Access-Control-Allow-Origin'] = '*'
