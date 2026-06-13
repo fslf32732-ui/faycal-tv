@@ -2,13 +2,14 @@ import subprocess
 import time
 import threading
 import os
-from playwright.sync_api import sync_playwright
+import requests
 from flask import Flask, Response, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
 
+# ضع هنا الروابط المباشرة التي تريد تشغيلها (تتغير بسهولة في أي وقت)
 SERVER_LINKS = {
     "1": "https://zz.depoooo.com/albaplayer/bein-1/?serv=1",
     "2": "https://zz.depoooo.com/albaplayer/bein-1/?serv=2",
@@ -17,79 +18,35 @@ SERVER_LINKS = {
 
 live_session = {
     "current_server": "1",
-    "stream_url": None,
-    "cookies_str": "",
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "is_ready": False,
-    "lock": threading.Lock()
 }
 
-def fetch_stream_data(server_id):
-    global live_session
-    print(f"[*] Cloud Fetching: Server {server_id}...")
+def generate_stable_stream():
+    """
+    سحب البث مباشرة من الرابط بأقل استهلاك ممكن لموارد السيرفر المجاني
+    """
+    active_url = SERVER_LINKS[live_session["current_server"]]
     
-    with live_session["lock"]:
-        live_session["is_ready"] = False
-        live_session["stream_url"] = None
-
-    with sync_playwright() as p:
-        try:
-            # تشغيل المتصفح بخصائص الحماية السحابية لمنع الانهيار (No-Sandbox)
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
-            context = browser.new_context(user_agent=live_session["user_agent"])
-            page = context.new_page()
-
-            def handle_request(request_packet):
-                url = request_packet.url
-                if ".m3u8" in url and "chunk" not in url:
-                    with live_session["lock"]:
-                        if not live_session["stream_url"]:
-                            live_session["stream_url"] = url
-                            cookies = context.cookies()
-                            live_session["cookies_str"] = "; ".join([f"{c['name']}={c['value']}" for c in cookies])
-                            live_session["is_ready"] = True
-                            print(f"[+] Caught URL successfully on cloud!")
-
-            page.on("request", handle_request)
-            page.goto(SERVER_LINKS[server_id], wait_until="networkidle", timeout=30000)
-            
-            for _ in range(10):
-                if live_session["is_ready"]:
-                    break
-                time.sleep(0.5)
-                
-            browser.close()
-        except Exception as e:
-            print(f"[!] Cloud Fetch Error: {e}")
-            try: browser.close()
-            except: pass
-
-def generate_high_quality_stream():
-    global live_session
-    if not live_session["is_ready"] or not live_session["stream_url"]:
-        return b""
-
-    headers = (
-        f"User-Agent: {live_session['user_agent']}\r\n"
-        f"Referer: {SERVER_LINKS[live_session['current_server']]}\r\n"
-        f"Cookie: {live_session['cookies_str']}\r\n"
-    )
+    headers = {
+        "User-Agent": live_session["user_agent"],
+        "Referer": active_url
+    }
     
-    # معالجة فائقة الخفة ومتوافقة 100% مع الهواتف من السيرفر
+    # تحويل وإعادة بث ذكي متوافق 100% مع الهواتف وبدقة HD ثابتة ونقية
     command = [
         'ffmpeg',
-        '-headers', headers,
+        '-headers', f"User-Agent: {headers['User-Agent']}\r\nReferer: {headers['Referer']}\r\n",
         '-fflags', '+nobuffer+igndts',
         '-async', '1', '-vsync', '1',
-        '-i', live_session["stream_url"],
-        '-vf', 'scale=-2:720',
+        '-i', active_url,
+        '-vf', 'scale=-2:720',             # جودة 720p HD مريحة ونظيفة للعين
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
-        '-crf', '24',                      # CRF 24 لتوفير تدفق البيانات (Bandwidth) في السيرفر المجاني
-        '-maxrate:v', '1500k',
-        '-bufsize:v', '2000k',
-        '-c:a', 'aac', '-b:a', '128k',
+        '-crf', '25',                      # CRF متوازن جداً لمنع الضغط والتقطيع في السيرفر المجاني
+        '-maxrate:v', '1200k',             # سقف بيانات ذكي ومناسب لإنترنت الهاتف في الجزائر
+        '-bufsize:v', '1800k',
+        '-c:a', 'aac', '-b:a', '96k',      # صوت ستيريو نقي وخفيف
         '-f', 'mp4', 
         '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
         'pipe:1'
@@ -103,7 +60,7 @@ def generate_high_quality_stream():
                 break
             yield data
     except Exception as e:
-        print(f"[-] Client disconnected: {e}")
+        print(f"[-] Client disconnected from stream")
     finally:
         try: process.kill()
         except: pass
@@ -157,10 +114,10 @@ def index():
             </div>
             <div class="channel-info">
                 <h3 class="channel-title">beIN SPORTS 1 HD</h3>
-                <p class="channel-desc">مستضاف بالكامل في السحاب - رابط ثابت وسريع لك ولأصدقائك.</p>
+                <p class="channel-desc">مستضاف بالكامل في السحاب - تم التحديث بنمط الاستهلاك المنخفض فائق السرعة الثابت.</p>
             </div>
             <div class="servers-section">
-                <div class="section-label">اختر السيرفر:</div>
+                <div class="section-label">اختر الجودة والسيرفر:</div>
                 <div class="servers-grid">
                     <button id="btn1" class="server-btn active" onclick="changeServer('1')">سيرفر 1</button>
                     <button id="btn2" class="server-btn" onclick="changeServer('2')">سيرفر 2</button>
@@ -177,11 +134,9 @@ def index():
                 .then(response => response.json())
                 .then(data => {
                     if(data.status === "success") {
-                        setTimeout(function(){
-                            var video = document.getElementById('videoPlayer');
-                            video.load();
-                            video.play();
-                        }, 2500);
+                        var video = document.getElementById('videoPlayer');
+                        video.load();
+                        video.play();
                     }
                 });
             }
@@ -195,22 +150,14 @@ def set_server():
     global live_session
     server_id = request.args.get('id', '1')
     if server_id in SERVER_LINKS:
-        with live_session["lock"]:
-            live_session["current_server"] = server_id
-        threading.Thread(target=fetch_stream_data, args=(server_id,)).start()
+        live_session["current_server"] = server_id
         return jsonify({"status": "success", "server": server_id})
     return jsonify({"status": "error"})
 
 @app.route('/video_feed')
 def video_feed():
-    if not live_session["is_ready"] or not live_session["stream_url"]:
-        return Response("Loading...", mimetype='text/plain', status=202)
-    return Response(generate_high_quality_stream(), mimetype='video/mp4')
+    return Response(generate_stable_stream(), mimetype='video/mp4')
 
 if __name__ == '__main__':
-    init_thread = threading.Thread(target=fetch_stream_data, args=("1",))
-    init_thread.start()
-    
-    # قراءة المنفذ ديناميكياً من بيئة السيرفر السحابي، والافتراضي 8000
     port = int(os.environ.get("PORT", 8000))
     app.run(host='0.0.0.0', port=port, threaded=True)
