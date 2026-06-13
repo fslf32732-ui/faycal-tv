@@ -1,5 +1,4 @@
 import os
-import time
 from flask import Flask, request, send_from_directory, make_response
 from flask_cors import CORS
 
@@ -39,42 +38,57 @@ def index():
         <script>
             var video = document.getElementById('video');
             var statusMessage = document.getElementById('status_message');
-            
-            // 🎯 كسر الكاش: إضافة رقم عشوائي متغير للرابط لإجبار المتصفح على جلب التحديث فوراً
-            var m3u8Url = "/stream/index.m3u8?t=" + new Date().getTime();
+            var hls = null;
 
-            if (Hls.isSupported()) {
-                var hls = new Hls({
-                    maxLiveSyncPlaybackRate: 1.5,
-                    liveSyncDurationCount: 2,
-                    enableWorker: true,
-                    // إجبار المشغل على إعادة طلب المانيفست بانتظام كبث مباشر حقيقي
-                    manifestLoadingTimeOut: 10000,
-                    manifestLoadingMaxRetry: 10
-                });
-                hls.loadSource(m3u8Url);
-                hls.attachMedia(video);
-                
-                hls.on(Hls.Events.MANIFEST_PARSED, function () {
-                    statusMessage.innerText = "● البث المباشر شغال الآن بنجاح.";
-                    video.play();
-                });
+            function startStream() {
+                // تدمير المشغل القديم إن وجد لبناء اتصال جديد ونظيف
+                if (hls) {
+                    hls.destroy();
+                }
 
-                // إعادة تحديث الرابط بانتظام عند الحاجة لمنع الموت بعد 16 ثانية
-                hls.on(Hls.Events.LEVEL_LOADED, function() {
-                    hls.config.manifestLoadingArgs = { params: { t: new Date().getTime() } };
-                });
+                // كسر الكاش كلياً بإضافة الـ Timestamp الحالي ورقم عشوائي للرابط
+                var m3u8Url = "/stream/index.m3u8?t=" + new Date().getTime() + "&r=" + Math.random();
 
-                hls.on(Hls.Events.ERROR, function (event, data) {
-                    if (data.fatal) {
-                        statusMessage.innerText = "⚠️ في انتظار استقبال مقاطع الفيديو من الحاسوب الرئيسي...";
-                        statusMessage.style.color = "#ffcc00";
-                    }
-                });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = m3u8Url;
-                statusMessage.innerText = "● الاتصال مباشر عبر مشغل النظام.";
+                if (Hls.isSupported()) {
+                    hls = new Hls({
+                        maxLiveSyncPlaybackRate: 2.0,
+                        liveSyncDurationCount: 1,
+                        enableWorker: true,
+                        manifestLoadingTimeOut: 5000,
+                        manifestLoadingMaxRetry: 5
+                    });
+                    
+                    hls.loadSource(m3u8Url);
+                    hls.attachMedia(video);
+                    
+                    hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                        statusMessage.innerText = "● البث المباشر شغال الآن بنجاح.";
+                        video.play().catch(function(e){});
+                    });
+
+                    hls.on(Hls.Events.ERROR, function (event, data) {
+                        if (data.fatal) {
+                            statusMessage.innerText = "🔄 جاري إعادة مزامنة تدفق الفيديو المستمر...";
+                            statusMessage.style.color = "#ffcc00";
+                            // إعادة تشغيل المنظومة تلقائياً عند حدوث أي تجمد
+                            setTimeout(startStream, 2000);
+                        }
+                    });
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = m3u8Url;
+                    statusMessage.innerText = "● الاتصال مباشر عبر مشغل النظام.";
+                }
             }
+
+            // تشغيل البث المباشر لأول مرة
+            startStream();
+
+            # إجبار المتصفح على إعادة تحديث قائمة التشغيل كل 5 ثوانٍ بشكل مستقل تماماً عن الكاش
+            setInterval(function() {
+                if (hls) {
+                    hls.loadSource("/stream/index.m3u8?t=" + new Date().getTime());
+                }
+            }, 5000);
         </script>
     </body>
     </html>
@@ -90,18 +104,14 @@ def upload_file(filename):
 @app.route('/stream/<filename>')
 def serve_stream(filename):
     response = make_response(send_from_directory(STREAM_DIR, filename))
-    
-    # 🎯 منع الكاش نهائياً لملف البث المتغير index.m3u8
     if filename.endswith('.m3u8'):
         response.headers['Content-Type'] = 'application/vnd.apple.mpegurl'
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
     elif filename.endswith('.ts'):
         response.headers['Content-Type'] = 'video/mp2t'
-        # المقاطع الثابتة يمكن تركها في الكاش عادي لتسريع تحميلها
-        response.headers['Cache-Control'] = 'max-age=3600'
-        
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
 
