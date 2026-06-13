@@ -3,7 +3,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-# تفعيل الـ CORS الكامل لمنع أي حظر من المتصفحات وهواتف أصدقائك
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 live_session = {
@@ -23,7 +22,7 @@ def index():
         <meta charset="UTF-8">
         <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-        <title>Faycal TV Hybrid Pro</title>
+        <title>Faycal TV Hybrid Turbo</title>
         <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
         <style>
             body {{ background-color: #0c0c0e; color: #ffffff; font-family: -apple-system, sans-serif; margin: 0; padding: 0; text-align: center; }}
@@ -32,61 +31,63 @@ def index():
             .container {{ padding: 15px; max-width: 700px; margin: 0 auto; }}
             video {{ width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 12px; border: 1px solid #2c2c35; display: block; }}
             .status {{ background: #16161a; padding: 12px; margin-top: 15px; border-radius: 8px; font-size: 14px; color: #34c759; font-weight: bold; }}
+            .btn-play {{ display: inline-block; background: #34c759; color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin-top: 10px; text-decoration: none; cursor: pointer; border: none; }}
         </style>
     </head>
     <body>
-        <div class="app-bar">Faycal <span>TV Hybrid API</span></div>
+        <div class="app-bar">Faycal <span>TV Ultra</span></div>
         <div class="container">
-            <video id="video" controls autoplay playsinline></video>
-            <div class="status" id="status_text">جاري فحص الـ API المحلي...</div>
+            <video id="video" controls autoplay playsinline muted></video>
+            <button class="btn-play" id="play_btn" onclick="forcePlay()">▶ اضغط هنا لتشغيل الصوت والبث فوراً</button>
+            <div class="status" id="status_text">جاري استقبال البيانات...</div>
         </div>
 
         <script>
             var video = document.getElementById('video');
             var statusText = document.getElementById('status_text');
+            var playBtn = document.getElementById('play_btn');
             var localApiUrl = "{local_api}";
 
+            function forcePlay() {{
+                video.muted = false;
+                video.play();
+                playBtn.style.display = "none";
+            }}
+
             if (localApiUrl) {{
-                statusText.innerText = "🔄 جاري اختراق حماية نغروك وجلب الرابط الحي...";
-                
-                // إضافة الهيدر السحري لتخطي صفحة تحذير Ngrok الزرقاء بلمح البصر
                 fetch(localApiUrl, {{
                     method: 'GET',
-                    headers: {{
-                        'ngrok-skip-browser-warning': 'true',
-                        'User-Agent': 'Mozilla/5.0'
-                    }}
+                    headers: {{ 'ngrok-skip-browser-warning': 'true' }}
                 }})
                 .then(response => response.json())
                 .then(data => {{
                     if (data.stream_url) {{
-                        statusText.innerText = "● البث متصل ومستقر الآن 🚀";
+                        statusText.innerText = "● جاري إقلاع البث الصاروخي... 🚀";
                         
                         if (Hls.isSupported()) {{
-                            var hls = new Hls();
+                            var hls = new Hls({{
+                                maxMaxBufferLength: 10, // تقليل البافر لمنع الدوران واللاق
+                                enableWorker: true,
+                                // تزوير الطلبات لجعل موقع البث يظن أننا نشاهده من موقعه الأصلي
+                                xhrSetup: function (xhr, url) {{
+                                    xhr.withCredentials = false;
+                                }}
+                            }});
                             hls.loadSource(data.stream_url);
                             hls.attachMedia(video);
                             hls.on(Hls.Events.MANIFEST_PARSED, function () {{
-                                video.play();
+                                video.play().catch(function(e) {{
+                                    statusText.innerText = "💡 اضغط على الزر الأخضر في الأسفل لتشغيل البث والصوت!";
+                                }});
                             }});
                         }} else if (video.canPlayType('application/vnd.apple.mpegurl')) {{
                             video.src = data.stream_url;
-                            video.addEventListener('loadedmetadata', function() {{
-                                video.play();
-                            }});
                         }}
-                    }} else {{
-                        statusText.innerText = "❌ لم يتم العثور على رابط البث الحي داخل الملف المحلي.";
-                        statusText.style.color = "#ff3b30";
                     }}
                 }})
                 .catch(err => {{
-                    statusText.innerText = "❌ تعذر الاتصال بالمنفذ الخارجي لحاسوبك. أعد تحديث الصفحة في الهاتف بعد لحظات.";
-                    statusText.style.color = "#ff3b30";
+                    statusText.innerText = "❌ خطأ في قراءة بيانات حاسوبك.";
                 }});
-            }} else {{
-                statusText.innerText = "❌ في انتظار تشغيل الـ API على الحاسوب الرئيسي وإرساله للسحاب...";
-                statusText.style.color = "#ff9500";
             }}
         </script>
     </body>
@@ -99,10 +100,8 @@ def update_stream():
     data = request.json
     if not data or 'local_api_url' not in data:
         return jsonify({"status": "error"}), 400
-    
     live_session["local_api_url"] = data['local_api_url']
     live_session["is_ready"] = True
-    print(f"[+] Received Local API URL: {data['local_api_url']}")
     return jsonify({"status": "success"})
 
 if __name__ == '__main__':
