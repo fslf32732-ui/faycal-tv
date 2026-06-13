@@ -5,7 +5,6 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# مجلد الحفظ داخل بيئة المشروع لضمان استقرار الصلاحيات
 STREAM_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stream")
 if not os.path.exists(STREAM_DIR):
     os.makedirs(STREAM_DIR)
@@ -40,29 +39,41 @@ def index():
             var video = document.getElementById('video');
             var statusMessage = document.getElementById('status_message');
             var hls = null;
+            var retryCount = 0;
+            var maxRetries = 20;
 
             function startStream() {
                 if (hls) {
                     hls.destroy();
+                    hls = null;
                 }
 
-                // كسر كاش البداية فقط
+                // كسر الكاش عند كل طلب للمانيفست فقط
                 var m3u8Url = "/stream/index.m3u8?t=" + new Date().getTime();
 
                 if (Hls.isSupported()) {
                     hls = new Hls({
+                        // ✅ إعدادات محسّنة لتوافق liveSyncDurationCount مع hls_list_size: 3
+                        liveSyncDurationCount: 3,
+                        liveMaxLatencyDurationCount: 6,
                         maxLiveSyncPlaybackRate: 1.5,
-                        liveSyncDurationCount: 2,      // موازنة لضمان سلاسة التدفق دون ريفراش
                         enableWorker: true,
-                        lowLatencyMode: true,          // تفعيل زمن التأخير المنخفض للمباريات
+                        lowLatencyMode: true,
                         manifestLoadingTimeOut: 10000,
-                        manifestLoadingMaxRetry: 10
+                        manifestLoadingMaxRetry: 15,
+                        levelLoadingTimeOut: 10000,
+                        fragLoadingTimeOut: 20000,
+                        // ✅ تقليل زمن buffer للبث المباشر
+                        maxBufferLength: 15,
+                        maxMaxBufferLength: 30,
                     });
-                    
+
                     hls.loadSource(m3u8Url);
                     hls.attachMedia(video);
-                    
+
                     hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                        retryCount = 0;
+                        statusMessage.style.color = "#34c759";
                         statusMessage.innerText = "● البث المباشر شغال الآن بنجاح.";
                         video.play().catch(function(e){
                             statusMessage.innerText = "⚠️ اضغط تشغيل يدويًا للسماح بالصوت.";
@@ -71,26 +82,42 @@ def index():
 
                     hls.on(Hls.Events.ERROR, function (event, data) {
                         if (data.fatal) {
+                            statusMessage.style.color = "#ffcc00";
                             switch (data.type) {
                                 case Hls.ErrorTypes.NETWORK_ERROR:
-                                    statusMessage.innerText = "🔄 خطأ شبكة، جاري إعادة المزامنة الحية...";
-                                    hls.startLoad();
+                                    if (retryCount < maxRetries) {
+                                        retryCount++;
+                                        statusMessage.innerText = "🔄 خطأ شبكة، جاري إعادة المزامنة... (" + retryCount + "/" + maxRetries + ")";
+                                        hls.startLoad();
+                                    } else {
+                                        statusMessage.innerText = "🔄 إعادة بناء الاتصال الكامل...";
+                                        retryCount = 0;
+                                        setTimeout(startStream, 3000);
+                                    }
                                     break;
                                 case Hls.ErrorTypes.MEDIA_ERROR:
                                     statusMessage.innerText = "🔄 جاري معالجة حزم الفيديو والصوت...";
                                     hls.recoverMediaError();
                                     break;
                                 default:
-                                    statusMessage.innerText = "🔄 جاري إعادة بناء الاتصال بالسيرفر المحلي...";
-                                    setTimeout(startStream, 2000);
+                                    statusMessage.innerText = "🔄 جاري إعادة بناء الاتصال بالسيرفر...";
+                                    setTimeout(startStream, 3000);
                                     break;
                             }
-                            statusMessage.style.color = "#ffcc00";
                         }
                     });
+
                 } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    // Safari / iOS - native HLS support
                     video.src = m3u8Url;
                     statusMessage.innerText = "● الاتصال مباشر عبر مشغل النظام.";
+                    video.addEventListener('error', function() {
+                        statusMessage.innerText = "🔄 إعادة المحاولة...";
+                        setTimeout(startStream, 3000);
+                    });
+                } else {
+                    statusMessage.style.color = "#ff4444";
+                    statusMessage.innerText = "❌ المتصفح لا يدعم HLS.";
                 }
             }
 
@@ -102,6 +129,9 @@ def index():
 
 @app.route('/upload/<filename>', methods=['PUT'])
 def upload_file(filename):
+    """استقبال الملفات من local_streamer.py"""
+    # ✅ حماية من اسم ملف خبيث (path traversal)
+    filename = os.path.basename(filename)
     file_path = os.path.join(STREAM_DIR, filename)
     with open(file_path, 'wb') as f:
         f.write(request.data)
@@ -109,15 +139,22 @@ def upload_file(filename):
 
 @app.route('/stream/<filename>')
 def serve_stream(filename):
+    """تقديم ملفات البث مع headers صحيحة"""
+    # ✅ حماية من path traversal
+    filename = os.path.basename(filename)
     response = make_response(send_from_directory(STREAM_DIR, filename))
+
     if filename.endswith('.m3u8'):
         response.headers['Content-Type'] = 'application/vnd.apple.mpegurl'
+        # ✅ منع أي كاش للمانيفست
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
     elif filename.endswith('.ts'):
         response.headers['Content-Type'] = 'video/mp2t'
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        # ✅ السماح بكاش قصير للمقاطع لتقليل الضغط على Render
+        response.headers['Cache-Control'] = 'public, max-age=10'
+
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
 
