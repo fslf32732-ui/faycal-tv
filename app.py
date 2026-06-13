@@ -1,108 +1,69 @@
 import os
-from flask import Flask, request, jsonify
+import time
+from flask import Flask, Response, request
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-live_session = {
-    "local_api_url": "",
-    "is_ready": False
-}
+# مخزن الإطار الحي الحالي (Buffer)
+latest_frame = b""
 
 @app.route('/')
 def index():
-    global live_session
-    local_api = live_session["local_api_url"] if live_session["is_ready"] else ""
-    
-    return f"""
+    return """
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
     <head>
         <meta charset="UTF-8">
-        <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-        <title>Faycal TV Hybrid Turbo</title>
-        <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+        <title>Faycal OBS Cloud TV</title>
         <style>
-            body {{ background-color: #0c0c0e; color: #ffffff; font-family: -apple-system, sans-serif; margin: 0; padding: 0; text-align: center; }}
-            .app-bar {{ background: #16161a; padding: 15px; font-size: 20px; font-weight: bold; border-bottom: 1px solid #222227; }}
-            .app-bar span {{ color: #ff3b30; }}
-            .container {{ padding: 15px; max-width: 700px; margin: 0 auto; }}
-            video {{ width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 12px; border: 1px solid #2c2c35; display: block; }}
-            .status {{ background: #16161a; padding: 12px; margin-top: 15px; border-radius: 8px; font-size: 14px; color: #34c759; font-weight: bold; }}
-            .btn-play {{ display: inline-block; background: #34c759; color: white; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin-top: 10px; text-decoration: none; cursor: pointer; border: none; }}
+            body { background-color: #0c0c0e; color: #ffffff; font-family: -apple-system, sans-serif; margin: 0; padding: 0; text-align: center; }
+            .app-bar { background: #16161a; padding: 15px; font-size: 20px; font-weight: bold; border-bottom: 1px solid #222227; }
+            .app-bar span { color: #34c759; }
+            .container { padding: 15px; max-width: 800px; margin: 0 auto; }
+            .screen { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 16px; overflow: hidden; border: 1px solid #2c2c35; box-shadow: 0px 10px 30px rgba(0,0,0,0.8); }
+            .screen img { width: 100%; height: 100%; object-fit: contain; display: block; }
+            .status { background: #16161a; padding: 12px; margin-top: 15px; border-radius: 8px; font-size: 14px; color: #34c759; font-weight: bold; }
         </style>
     </head>
     <body>
-        <div class="app-bar">Faycal <span>TV Ultra</span></div>
+        <div class="app-bar">Faycal <span>OBS Stream</span></div>
         <div class="container">
-            <video id="video" controls autoplay playsinline muted></video>
-            <button class="btn-play" id="play_btn" onclick="forcePlay()">▶ اضغط هنا لتشغيل الصوت والبث فوراً</button>
-            <div class="status" id="status_text">جاري استقبال البيانات...</div>
+            <div class="screen">
+                <img src="/video_feed" alt="في انتظار انطلاق البث من حاسوب OBS الرئيسي...">
+            </div>
+            <div class="status">● اتصال سحابي مباشر ومستقر بنمط OBS 🚀</div>
         </div>
-
-        <script>
-            var video = document.getElementById('video');
-            var statusText = document.getElementById('status_text');
-            var playBtn = document.getElementById('play_btn');
-            var localApiUrl = "{local_api}";
-
-            function forcePlay() {{
-                video.muted = false;
-                video.play();
-                playBtn.style.display = "none";
-            }}
-
-            if (localApiUrl) {{
-                fetch(localApiUrl, {{
-                    method: 'GET',
-                    headers: {{ 'ngrok-skip-browser-warning': 'true' }}
-                }})
-                .then(response => response.json())
-                .then(data => {{
-                    if (data.stream_url) {{
-                        statusText.innerText = "● جاري إقلاع البث الصاروخي... 🚀";
-                        
-                        if (Hls.isSupported()) {{
-                            var hls = new Hls({{
-                                maxMaxBufferLength: 10, // تقليل البافر لمنع الدوران واللاق
-                                enableWorker: true,
-                                // تزوير الطلبات لجعل موقع البث يظن أننا نشاهده من موقعه الأصلي
-                                xhrSetup: function (xhr, url) {{
-                                    xhr.withCredentials = false;
-                                }}
-                            }});
-                            hls.loadSource(data.stream_url);
-                            hls.attachMedia(video);
-                            hls.on(Hls.Events.MANIFEST_PARSED, function () {{
-                                video.play().catch(function(e) {{
-                                    statusText.innerText = "💡 اضغط على الزر الأخضر في الأسفل لتشغيل البث والصوت!";
-                                }});
-                            }});
-                        }} else if (video.canPlayType('application/vnd.apple.mpegurl')) {{
-                            video.src = data.stream_url;
-                        }}
-                    }}
-                }})
-                .catch(err => {{
-                    statusText.innerText = "❌ خطأ في قراءة بيانات حاسوبك.";
-                }});
-            }}
-        </script>
     </body>
     </html>
     """
 
-@app.route('/update_stream', methods=['POST'])
-def update_stream():
-    global live_session
-    data = request.json
-    if not data or 'local_api_url' not in data:
-        return jsonify({"status": "error"}), 400
-    live_session["local_api_url"] = data['local_api_url']
-    live_session["is_ready"] = True
-    return jsonify({"status": "success"})
+# 📥 مسار استقبال البث: حاسوبك يضخ الصور هنا باستمرار عبر POST
+@app.route('/push_frame', methods=['POST'])
+def push_frame():
+    global latest_frame
+    latest_frame = request.data
+    return "OK", 200
+
+def generate_stream():
+    global latest_frame
+    last_sent_frame = b""
+    while True:
+        if latest_frame and latest_frame != last_sent_frame:
+            last_sent_frame = latest_frame
+            # تغليف الإطار ليفهمه المتصفح فوراً كتيار متصل
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + latest_frame + b'\r\n')
+        else:
+            time.sleep(0.02) # حماية معالج السيرفر عند انتظار إطارات جديدة
+
+# 📤 مسار عرض البث للهواتف
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_stream(), 
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8000))
