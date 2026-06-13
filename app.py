@@ -3,9 +3,10 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
 app = Flask(__name__)
+# تفعيل الـ CORS لتشغيل البث على الهواتف بدون قيود المتصفح
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# مجلد مؤقت داخل السيرفر لحفظ مقاطع الفيديو القادمة من حاسوبك
+# مجلد حفظ مقاطع الفيديو المؤقتة
 STREAM_DIR = "/tmp/hls_stream"
 if not os.path.exists(STREAM_DIR):
     os.makedirs(STREAM_DIR)
@@ -18,49 +19,57 @@ def index():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-        <title>Faycal Smart OBS TV</title>
+        <title>Faycal TV Pro</title>
         <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
         <style>
-            body { background-color: #0c0c0e; color: #ffffff; font-family: -apple-system, sans-serif; margin: 0; padding: 0; text-align: center; }
-            .app-bar { background: #16161a; padding: 15px; font-size: 20px; font-weight: bold; border-bottom: 1px solid #222227; }
-            .app-bar span { color: #34c759; }
-            .container { padding: 15px; max-width: 700px; margin: 0 auto; }
-            video { width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 12px; border: 1px solid #2c2c35; display: block; }
-            .status { background: #16161a; padding: 12px; margin-top: 15px; border-radius: 8px; font-size: 14px; color: #34c759; font-weight: bold; }
+            body { background-color: #0e0e10; color: #ffffff; font-family: sans-serif; margin: 0; padding: 0; text-align: center; }
+            .header-bar { background: #1f1f23; padding: 15px; font-size: 18px; font-weight: bold; border-bottom: 1px solid #2a2a30; }
+            .header-bar span { color: #34c759; }
+            .main-container { padding: 20px; max-width: 720px; margin: 0 auto; }
+            video { width: 100%; aspect-ratio: 16/9; background: #000000; border-radius: 8px; border: 1px solid #2d2d34; display: block; }
+            .status-log { background: #1f1f23; padding: 10px; margin-top: 15px; border-radius: 6px; font-size: 14px; color: #34c759; }
         </style>
     </head>
     <body>
-        <div class="app-bar">Faycal <span>Smart Failover HLS</span></div>
-        <div class="container">
+        <div class="header-bar">Faycal TV - <span>HLS Stream Player</span></div>
+        <div class="main-container">
             <video id="video" controls autoplay playsinline></video>
-            <div class="status" id="status_text">📡 منظومة التناوب الثلاثية متصلة بالسحاب وصوت وصورة بجودة خارقة...</div>
+            <div class="status-log" id="status_message">جاري التحقق من اتصال البث...</div>
         </div>
 
         <script>
             var video = document.getElementById('video');
-            var statusText = document.getElementById('status_text');
-            var streamUrl = "/stream/index.m3u8";
+            var statusMessage = document.getElementById('status_message');
+            var m3u8Url = "/stream/index.m3u8";
 
             if (Hls.isSupported()) {
                 var hls = new Hls({
                     maxLiveSyncPlaybackRate: 1.5,
-                    liveSyncDurationCount: 2,
+                    liveSyncDurationCount: 3,
                     enableWorker: true
                 });
-                hls.loadSource(streamUrl);
+                hls.loadSource(m3u8Url);
                 hls.attachMedia(video);
                 hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                    statusMessage.innerText = "● البث المباشر شغال الآن بنجاح.";
                     video.play();
                 });
+                hls.on(Hls.Events.ERROR, function (event, data) {
+                    if (data.fatal) {
+                        statusMessage.innerText = "⚠️ في انتظار استقبال مقاطع الفيديو من الحاسوب الرئيسي...";
+                        statusMessage.style.color = "#ffcc00";
+                    }
+                });
             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                video.src = streamUrl;
+                video.src = m3u8Url;
+                statusMessage.innerText = "● الاتصال مباشر عبر مشغل النظام.";
             }
         </script>
     </body>
     </html>
     """
 
-# 📥 مسار استقبال الملفات من حاسوبك الشخصي
+# 📥 استقبال ملفات الـ m3u8 والـ ts من السكربت المحلي
 @app.route('/upload/<filename>', methods=['PUT'])
 def upload_file(filename):
     file_path = os.path.join(STREAM_DIR, filename)
@@ -68,12 +77,11 @@ def upload_file(filename):
         f.write(request.data)
     return "OK", 200
 
-# 📤 مسار تقديم الملفات للمشغل في الهاتف
+# 📤 تقديم الملفات للمشغل في المتصفح
 @app.route('/stream/<filename>')
 def serve_stream(filename):
     return send_from_directory(STREAM_DIR, filename)
 
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get("PORT", 8000))
     app.run(host='0.0.0.0', port=port, threaded=True)
