@@ -1,12 +1,11 @@
 import os
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, make_response
 from flask_cors import CORS
 
 app = Flask(__name__)
-# تفعيل الـ CORS لتشغيل البث على الهواتف بدون قيود المتصفح
+# تفعيل الـ CORS بشكل كامل لجميع المسارات
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# مجلد حفظ مقاطع الفيديو المؤقتة
 STREAM_DIR = "/tmp/hls_stream"
 if not os.path.exists(STREAM_DIR):
     os.makedirs(STREAM_DIR)
@@ -46,7 +45,8 @@ def index():
                 var hls = new Hls({
                     maxLiveSyncPlaybackRate: 1.5,
                     liveSyncDurationCount: 3,
-                    enableWorker: true
+                    enableWorker: true,
+                    lowLatencyMode: true
                 });
                 hls.loadSource(m3u8Url);
                 hls.attachMedia(video);
@@ -77,10 +77,22 @@ def upload_file(filename):
         f.write(request.data)
     return "OK", 200
 
-# 📤 تقديم الملفات للمشغل في المتصفح
+# 📤 تقديم الملفات للمشغل في المتصفح مع إرسال الهيدرز الصحيحة وتخطي حظر CORS
 @app.route('/stream/<filename>')
 def serve_stream(filename):
-    return send_from_directory(STREAM_DIR, filename)
+    response = make_response(send_from_directory(STREAM_DIR, filename))
+    
+    # تصحيح نوع الـ Mime-Type بناءً على اللاحقة لكي يفهمها الهاتف فوراً
+    if filename.endswith('.m3u8'):
+        response.headers['Content-Type'] = 'application/vnd.apple.mpegurl'
+    elif filename.endswith('.ts'):
+        response.headers['Content-Type'] = 'video/mp2t'
+        
+    # إضافة هيدرز السماح بالوصول من أي مكان لمنع حظر المتصفح للمقاطع
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = '*'
+    return response
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8000))
