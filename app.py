@@ -1,12 +1,12 @@
 import os
-from flask import Flask, request, jsonify, send_from_directory, make_response
+from flask import Flask, request, send_from_directory, make_response
 from flask_cors import CORS
 
 app = Flask(__name__)
-# تفعيل الـ CORS بشكل كامل لجميع المسارات
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-STREAM_DIR = "/tmp/hls_stream"
+# تغيير المجلد ليكون داخل بيئة المشروع لضمان الصلاحيات
+STREAM_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stream")
 if not os.path.exists(STREAM_DIR):
     os.makedirs(STREAM_DIR)
 
@@ -44,9 +44,8 @@ def index():
             if (Hls.isSupported()) {
                 var hls = new Hls({
                     maxLiveSyncPlaybackRate: 1.5,
-                    liveSyncDurationCount: 3,
-                    enableWorker: true,
-                    lowLatencyMode: true
+                    liveSyncDurationCount: 2,
+                    enableWorker: true
                 });
                 hls.loadSource(m3u8Url);
                 hls.attachMedia(video);
@@ -69,7 +68,6 @@ def index():
     </html>
     """
 
-# 📥 استقبال ملفات الـ m3u8 والـ ts من السكربت المحلي
 @app.route('/upload/<filename>', methods=['PUT'])
 def upload_file(filename):
     file_path = os.path.join(STREAM_DIR, filename)
@@ -77,21 +75,14 @@ def upload_file(filename):
         f.write(request.data)
     return "OK", 200
 
-# 📤 تقديم الملفات للمشغل في المتصفح مع إرسال الهيدرز الصحيحة وتخطي حظر CORS
 @app.route('/stream/<filename>')
 def serve_stream(filename):
     response = make_response(send_from_directory(STREAM_DIR, filename))
-    
-    # تصحيح نوع الـ Mime-Type بناءً على اللاحقة لكي يفهمها الهاتف فوراً
     if filename.endswith('.m3u8'):
         response.headers['Content-Type'] = 'application/vnd.apple.mpegurl'
     elif filename.endswith('.ts'):
         response.headers['Content-Type'] = 'video/mp2t'
-        
-    # إضافة هيدرز السماح بالوصول من أي مكان لمنع حظر المتصفح للمقاطع
     response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = '*'
     return response
 
 if __name__ == '__main__':
