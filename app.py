@@ -5,6 +5,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+# مجلد الحفظ داخل بيئة المشروع لضمان استقرار الصلاحيات
 STREAM_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stream")
 if not os.path.exists(STREAM_DIR):
     os.makedirs(STREAM_DIR)
@@ -41,12 +42,11 @@ def index():
             var hls = null;
 
             function startStream() {
-                // تدمير المشغل القديم إن وجد لبناء اتصال جديد ونظيف
                 if (hls) {
                     hls.destroy();
                 }
 
-                // كسر الكاش كلياً بإضافة الـ Timestamp الحالي ورقم عشوائي للرابط
+                // كسر الكاش بإضافة المعطيات الزمنية والعشوائية
                 var m3u8Url = "/stream/index.m3u8?t=" + new Date().getTime() + "&r=" + Math.random();
 
                 if (Hls.isSupported()) {
@@ -70,7 +70,6 @@ def index():
                         if (data.fatal) {
                             statusMessage.innerText = "🔄 جاري إعادة مزامنة تدفق الفيديو المستمر...";
                             statusMessage.style.color = "#ffcc00";
-                            // إعادة تشغيل المنظومة تلقائياً عند حدوث أي تجمد
                             setTimeout(startStream, 2000);
                         }
                     });
@@ -80,10 +79,9 @@ def index():
                 }
             }
 
-            // تشغيل البث المباشر لأول مرة
             startStream();
 
-            # إجبار المتصفح على إعادة تحديث قائمة التشغيل كل 5 ثوانٍ بشكل مستقل تماماً عن الكاش
+            // إجبار المتصفح على تجديد جلب قائمة التشغيل كل 5 ثوانٍ
             setInterval(function() {
                 if (hls) {
                     hls.loadSource("/stream/index.m3u8?t=" + new Date().getTime());
